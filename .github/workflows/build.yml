@@ -1,0 +1,64 @@
+herename: Build Rouya APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, m ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Rebuild project structure
+        run: |
+          set -e
+          mkdir -p app/src/main/java/com/rouya/app app/src/main/assets
+          [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/AndroidManifest.xml
+          [ -f MainActivity.java ] && mv MainActivity.java app/src/main/java/com/rouya/app/MainActivity.java
+          for f in index.html sw.js manifest.json icon.svg; do
+            [ -f "$f" ] && mv "$f" app/src/main/assets/"$f" || true
+          done
+          # no launcher icon was uploaded: use the default Android icon
+          sed -i '/android:icon=/d; /android:roundIcon=/d' app/src/main/AndroidManifest.xml
+          cat > build.gradle <<'G'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          G
+          cat > app/build.gradle <<'G'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.rouya.app'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.rouya.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          G
+          find . -path ./.git -prune -o -type f -print | sort
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rouya-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
